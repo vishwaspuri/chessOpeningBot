@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+	"github.com/go-redis/redis/v8"
 	"github.com/gorilla/mux"
 	"github.com/joho/godotenv"
 	"github.com/vishwaspuri/ecoCodes/handlers"
@@ -11,14 +13,18 @@ import (
 )
 
 func main() {
-	err := godotenv.Load(".env")
-	if err != nil {
-		log.Fatal(err)
-	}
+	_ = godotenv.Load(".env")
+	//Adding redis client
+	rdb := redis.NewClient(&redis.Options{
+		Addr:     os.Getenv("REDIS_URL"),
+		Password: os.Getenv("REDIS_PASSWORD"),
+		DB:       0,
+	})
+	fmt.Println("Redis Connected")
 
 	r := mux.NewRouter()
 	r.Handle("/", handlers.GetAllCodes())
-	r.Handle("/{code}", handlers.GetCode())
+	r.Handle("/{code}", handlers.GetCode(rdb))
 
 	server := &http.Server{
 		Handler:      r,
@@ -27,7 +33,7 @@ func main() {
 		WriteTimeout: 30 * time.Second,
 	}
 	log.Printf("HTTP server starting on :%s", os.Getenv("PORT_FOR_WEBAPP"))
-	err = server.ListenAndServe()
+	err := server.ListenAndServe()
 	if err != nil {
 		log.Fatal(err)
 		return

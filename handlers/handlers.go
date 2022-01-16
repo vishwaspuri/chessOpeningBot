@@ -2,14 +2,19 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
+	"github.com/go-redis/redis/v8"
 	data2 "github.com/vishwaspuri/ecoCodes/data"
+	"github.com/vishwaspuri/ecoCodes/utils"
+	"log"
 	"net/http"
 	"strings"
 )
 
 type Result struct {
-	Data  interface{} `json:"data,omitempty"`
-	Error string      `json:"error,omitempty"`
+	Cached bool        `json:"cached,omitempty"`
+	Data   interface{} `json:"data,omitempty"`
+	Error  string      `json:"error,omitempty"`
 }
 
 func GetAllCodes() http.Handler {
@@ -18,34 +23,55 @@ func GetAllCodes() http.Handler {
 		payload := Result{
 			Data: data,
 		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		err := json.NewEncoder(w).Encode(payload)
-		if err != nil {
-			panic(err)
-		}
+		writePayload(w, http.StatusOK, payload)
 	})
 }
 
-func GetCode() http.Handler {
+func GetCode(rdb *redis.Client) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		code := strings.TrimPrefix(r.URL.Path, "/")
-		data, err := data2.GetOpeningByCode(code)
+		path := r.URL.Path
+		code := strings.TrimPrefix(path, "/")
+
+		// Checking redis cache
+		data, err := utils.GetCache(path, rdb)
+		if err == nil {
+			payload := Result{
+				Data:   data,
+				Cached: true,
+			}
+			writePayload(w, http.StatusOK, payload)
+			return
+		}
+
+		// If cache isn't found, web scraper is used
+		data, err = data2.GetOpeningByCode(code)
 		var payload Result
 		if err != nil {
 			payload = Result{
 				Error: err.Error(),
 			}
+			writePayload(w, http.StatusBadRequest, payload)
 		} else {
 			payload = Result{
-				Data: data,
+				Data:   data,
+				Cached: false,
 			}
+			writePayload(w, http.StatusOK, payload)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		err = json.NewEncoder(w).Encode(payload)
+
+		// Web scrapped data is cached
+		err = utils.InsertCache(path, data, rdb)
 		if err != nil {
-			panic(err)
+			fmt.Println(err)
 		}
 	})
+}
+
+func writePayload(w http.ResponseWriter, responseCode int, payload interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(responseCode)
+	err := json.NewEncoder(w).Encode(payload)
+	if err != nil {
+		log.Fatalln(err)
+	}
 }
