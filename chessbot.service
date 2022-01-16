@@ -1,0 +1,12 @@
+[Unit]
+Description=chessbot
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5s
+EnvironmentFile=/home/vishwas/chessOpeningBot/.env
+ExecStart=/home/vishwas/chessOpeningBot/main
+
+[Install]
+WantedBy=multi-user.target
